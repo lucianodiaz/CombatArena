@@ -28,12 +28,20 @@ ASWeapon::ASWeapon()
 
 	TracerTargetName = "Target";
 
-	StartingBulletAngle = 5;
+	StartingBulletAngle = 0;
 
+	MaxBulletAngle = 5;
+
+	BaseDamage = 7;
+
+	MaxAmmo = 250;
+	AvailableAmmo = 30;
+	
 	SetReplicates(true);
 
 	NetUpdateFrequency = 66.0f;
 	MinNetUpdateFrequency = 33.0f;
+
 }
 
 // Called when the game starts or when spawned
@@ -41,6 +49,8 @@ void ASWeapon::BeginPlay()
 {
 	Super::BeginPlay();
 
+	CurrentAmmo = AvailableAmmo;
+	
 	BulletAngle = StartingBulletAngle;
 	
 	TimeBetweenShot = 60/RateOfFire;
@@ -48,63 +58,96 @@ void ASWeapon::BeginPlay()
 
 void ASWeapon::Fire()
 {
-
 	if(!HasAuthority())
 	{
 		ServerFire();
 	}
-	AActor* MyOwner = GetOwner();
-
-	if(MyOwner)
-	{
-		UE_LOG(LogTemp,Log,TEXT("Fire"));
-		PlayAnimFire();
-		FVector EyeLocation;
-		FRotator EyeRotation;
-		MyOwner->GetActorEyesViewPoint(EyeLocation,EyeRotation);
-		
-		FVector MuzzleLocation = SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
-		
-		FVector ShotDirection = EyeRotation.Vector();
-		FVector TraceEnd = MuzzleLocation + (ShotDirection * MaxDistanceEnd);
-
-		FCollisionQueryParams QueryParams;
-
-		QueryParams.AddIgnoredActor(MyOwner);
-		QueryParams.AddIgnoredActor(this);
-		QueryParams.bTraceComplex = true;
-		QueryParams.bReturnPhysicalMaterial = true;
-
-		//float Spread = FMath::RandRange(BulletSpread.X,BulletSpread.Y);
-		float Radius = FMath::Tan(FMath::DegreesToRadians(BulletAngle))* MaxDistanceEnd;;
-		FVector2D Point = RandomPointInCircle(Radius);
-		
-		FVector TracerEndPoint = TraceEnd + (EyeLocation.RightVector * Point.X) + (EyeLocation.UpVector * Point.Y);
-
-		FHitResult HitResult;
-
-		EPhysicalSurface SurfaceType = SurfaceType_Default;
-
 	
-		
-		if(GetWorld()->LineTraceSingleByChannel(HitResult,EyeLocation,TracerEndPoint,COLLISION_WEAPON,QueryParams))
-		{
-			SurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
-			
-			PlayImpactEffects(SurfaceType,HitResult.ImpactPoint);
-			TracerEndPoint = HitResult.ImpactPoint;
-		}
+	if (CurrentAmmo > 0)
+	{
+		AActor* MyOwner = GetOwner();
 
-		DrawDebugLine(GetWorld(),MuzzleLocation,TracerEndPoint,FColor::Red,false,4,0,2);
-		
-
-		if(HasAuthority())
+		if (MyOwner)
 		{
-			HitScanTrace.TraceTo = TracerEndPoint;
-			HitScanTrace.MuzzleLocation = MuzzleLocation;
+			CurrentAmmo --;
+			UE_LOG(LogTemp,Log,TEXT("Ammo: %i / MaxAmmo: %i"),CurrentAmmo,MaxAmmo);
+			if (BulletAngle <= MaxBulletAngle)
+			{
+				BulletAngle += 0.3;
+			}
+			else
+			{
+				BulletAngle = MaxBulletAngle;
+			}
+			PlayAnimFire();
+			FVector EyeLocation;
+			FRotator EyeRotation;
+			MyOwner->GetActorEyesViewPoint(EyeLocation, EyeRotation);
+
+			FVector MuzzleLocation = SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
+
+			FVector ShotDirection = EyeRotation.Vector();
+			FVector TraceEnd = MuzzleLocation + (ShotDirection * MaxDistanceEnd);
+
+			FCollisionQueryParams QueryParams;
+
+			QueryParams.AddIgnoredActor(MyOwner);
+			QueryParams.AddIgnoredActor(this);
+			QueryParams.bTraceComplex = true;
+			QueryParams.bReturnPhysicalMaterial = true;
+
+			//float Spread = FMath::RandRange(BulletSpread.X,BulletSpread.Y);
+			float Radius = FMath::Tan(FMath::DegreesToRadians(BulletAngle)) * MaxDistanceEnd;;
+			FVector2D Point = RandomPointInCircle(Radius);
+
+			FVector TracerEndPoint = TraceEnd + (EyeLocation.RightVector * Point.X) + (EyeLocation.UpVector * Point.Y);
+
+			FHitResult HitResult;
+
+			EPhysicalSurface SurfaceType = SurfaceType_Default;
+
+
+			if (GetWorld()->LineTraceSingleByChannel(HitResult, EyeLocation, TracerEndPoint,COLLISION_WEAPON,
+			                                         QueryParams))
+			{
+				AActor* HitActor = HitResult.GetActor();
+
+				SurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+
+				float ActualDamage = BaseDamage;
+
+				//Multiply damage depending SurfaceType
+				switch (SurfaceType)
+				{
+					case SURFACE_FLESHVULNERABLE:
+						ActualDamage *=2;
+						break;
+					default:
+						break;
+				}
+
+				UGameplayStatics::ApplyPointDamage(HitActor, ActualDamage, ShotDirection, HitResult,
+				                                   MyOwner->GetInstigatorController(), this, DamageType);
+
+				PlayImpactEffects(SurfaceType, HitResult.ImpactPoint);
+				TracerEndPoint = HitResult.ImpactPoint;
+			}
+
+			//DrawDebugLine(GetWorld(),MuzzleLocation,TracerEndPoint,FColor::Red,false,4,0,2);
+
+
+			if (HasAuthority())
+			{
+				HitScanTrace.TraceTo = TracerEndPoint;
+				HitScanTrace.MuzzleLocation = MuzzleLocation;
+			}
+			PlayWeaponEffects(TracerEndPoint);
+			LastFireTime = GetWorld()->TimeSeconds;
 		}
-		PlayWeaponEffects(TracerEndPoint);
-		LastFireTime = GetWorld()->TimeSeconds;
+	}
+	else
+	{
+		Reload();
 	}
 	
 }
@@ -121,6 +164,7 @@ bool ASWeapon::ServerFire_Validate()
 
 void ASWeapon::OnRep_HitScanTrace()
 {
+	PlayAnimFire();
 	PlayWeaponEffects(HitScanTrace.TraceTo);
 	PlayImpactEffects(HitScanTrace.SurfaceType,HitScanTrace.TraceTo);
 }
@@ -135,7 +179,29 @@ void ASWeapon::StartFire()
 
 void ASWeapon::StopFire()
 {
+	BulletAngle = StartingBulletAngle;
 	GetWorldTimerManager().ClearTimer(TimerHandle_TimerBetweenShot);
+}
+
+void ASWeapon::Reload()
+{
+	UE_LOG(LogTemp,Log,TEXT("Ammo: %i / MaxAmmo: %i"),CurrentAmmo,MaxAmmo);
+	if(MaxAmmo <= 0)
+	{
+		return;
+	}
+
+	if((MaxAmmo - (AvailableAmmo - CurrentAmmo)) <= 0 )
+	{
+		CurrentAmmo = MaxAmmo;
+		MaxAmmo -= CurrentAmmo;
+	}
+	else
+	{
+		CurrentAmmo = FMath::Clamp(AvailableAmmo - CurrentAmmo,0,AvailableAmmo);
+		MaxAmmo -=CurrentAmmo;
+	}
+	
 }
 
 void ASWeapon::PlayImpactEffects(EPhysicalSurface SurfaceType, FVector ImpactPoint)
@@ -160,8 +226,8 @@ void ASWeapon::PlayWeaponEffects(FVector TraceEnd)
 
 		if(TracerComp)
 		{
-			TracerComp->SetVectorParameter("InitialLocation",MuzzleLocation);
-			//TracerComp->SetVectorParameter(TracerTargetName, TraceEnd);
+			//TracerComp->SetVectorParameter("InitialLocation",MuzzleLocation);
+			TracerComp->SetVectorParameter(TracerTargetName, TraceEnd);
 		}
 	}
 }
@@ -179,6 +245,21 @@ void ASWeapon::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+}
+
+int ASWeapon::GetMaxAmmo() const
+{
+	return MaxAmmo;
+}
+
+int ASWeapon::GetCurrentAmmo() const
+{
+	return CurrentAmmo;
+}
+
+USkeletalMeshComponent* ASWeapon::GetMesh() const
+{
+	return SkeletalMeshComponent;
 }
 
 FVector2D ASWeapon::RandomPointInCircle(float Radius)
@@ -201,5 +282,5 @@ void ASWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetime
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME_CONDITION(ASWeapon,HitScanTrace,COND_SkipOwner);
+	DOREPLIFETIME(ASWeapon,HitScanTrace);
 }

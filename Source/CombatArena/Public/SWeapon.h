@@ -40,33 +40,55 @@ protected:
 	virtual void Fire();
 
 	FVector2D RandomPointInCircle(float Radius);
-	
-	UFUNCTION(Server,Reliable,WithValidation)
-	void ServerFire();
-
+    
 	void PlayImpactEffects(EPhysicalSurface SurfaceType, FVector ImpactPoint);
 
 	void PlayWeaponEffects(FVector TraceEnd);
 
 	void PlayAnimFire();
-
-	UPROPERTY(EditDefaultsOnly,Category="Weapon")
-	UAnimationAsset* FireAnimAsset;
 	
-	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category="Weapon")
-	FName TracerTargetName;
+	UFUNCTION(Server,Reliable,WithValidation)
+    void ServerFire();
+    	
+    UFUNCTION()
+    void OnRep_HitScanTrace();
 
-	UPROPERTY(EditDefaultsOnly,Category="Weapon");
-	float RateOfFire;
-
+	//Variables
+	
 	FTimerHandle TimerHandle_TimerBetweenShot;
 
 	float TimeBetweenShot;
 
 	float LastFireTime;
 
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")
+	TSubclassOf<UDamageType> DamageType;
+
+	UPROPERTY(EditDefaultsOnly,Category="Weapon")
+	float BaseDamage;
+
+	UPROPERTY(Replicated,EditDefaultsOnly,Category="Weapon")
+	UAnimationAsset* FireAnimAsset;
+	
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category="Weapon")
+	FName TracerTargetName;
+
+	UPROPERTY(EditDefaultsOnly,Category="Weapon")
+	int MaxAmmo;
+
+	UPROPERTY(EditDefaultsOnly,Category="Weapon")
+	int AvailableAmmo;
+
+	int CurrentAmmo;
+
+	UPROPERTY(EditDefaultsOnly,Category="Weapon");
+	float RateOfFire;
+
 	UPROPERTY(BlueprintReadOnly,Category="Weapon")
 	float BulletAngle;
+
+	UPROPERTY(EditDefaultsOnly,Category="Weapon")
+	float MaxBulletAngle;
 	
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Weapon")
 	float StartingBulletAngle;
@@ -88,9 +110,6 @@ protected:
 
 	UPROPERTY(ReplicatedUsing=OnRep_HitScanTrace)
 	FHitScanTrace HitScanTrace;
-
-	UFUNCTION()
-	void OnRep_HitScanTrace();
 	
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Weapon")
 	USkeletalMeshComponent* SkeletalMeshComponent;
@@ -100,7 +119,16 @@ public:
 
 	void StopFire();
 
+	void Reload();
+
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
+	UFUNCTION(BlueprintCallable)
+	int GetMaxAmmo() const;
+	
+	UFUNCTION(BlueprintCallable)
+	int GetCurrentAmmo() const;
+	
+	USkeletalMeshComponent* GetMesh() const;
 };

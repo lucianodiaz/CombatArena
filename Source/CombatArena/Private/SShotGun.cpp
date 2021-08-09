@@ -7,11 +7,17 @@
 
 #include "DrawDebugHelpers.h"
 #include "CombatArena/CombatArena.h"
+#include "Kismet/GameplayStatics.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 
 ASShotGun::ASShotGun()
 {
 	NumPellets = 10;
+	BaseDamage = 10;
+	StartingBulletAngle = 7;
+
+	MaxAmmo = 20;
+	AvailableAmmo = 6;
 }
 
 void ASShotGun::BeginPlay()
@@ -27,60 +33,79 @@ void ASShotGun::Fire()
 	{
 		ServerFire();
 	}
-	AActor* MyOwner = GetOwner();
-	if(MyOwner)
+	if(CurrentAmmo > 0)
 	{
-		UE_LOG(LogTemp,Log,TEXT("Fire"));
-		FVector EyeLocation;
-		FRotator EyeRotation;
-		MyOwner->GetActorEyesViewPoint(EyeLocation,EyeRotation);
-		
-		FVector MuzzleLocation = SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
-		
-		FVector ShotDirection = EyeRotation.Vector();
-		FVector TraceEnd = MuzzleLocation + (ShotDirection * MaxDistanceEnd);
-		
-		FCollisionQueryParams QueryParams;
-		QueryParams.AddIgnoredActor(MyOwner);
-		QueryParams.AddIgnoredActor(this);
-		QueryParams.bTraceComplex = true;
-		QueryParams.bReturnPhysicalMaterial = true;
-
-		FHitResult HitResult;
-
-
-		EPhysicalSurface SurfaceType = SurfaceType_Default;
-
-		FVector TracerEndPoint;
-		PlayAnimFire();
-		float Radius;
-		for (int i = 0; i<NumPellets;i++)
+		AActor* MyOwner = GetOwner();
+		if(MyOwner)
 		{
-			Radius = FMath::Tan(FMath::DegreesToRadians(BulletAngle))* MaxDistanceEnd;
-			FVector2D Point = RandomPointInCircle(Radius);
+			CurrentAmmo --;
+			UE_LOG(LogTemp,Log,TEXT("Ammo: %i / MaxAmmo: %i"),CurrentAmmo,MaxAmmo);
+			FVector EyeLocation;
+			FRotator EyeRotation;
+			MyOwner->GetActorEyesViewPoint(EyeLocation,EyeRotation);
+		
+			FVector MuzzleLocation = SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
+		
+			FVector ShotDirection = EyeRotation.Vector();
+			FVector TraceEnd = MuzzleLocation + (ShotDirection * MaxDistanceEnd);
+		
+			FCollisionQueryParams QueryParams;
+			QueryParams.AddIgnoredActor(MyOwner);
+			QueryParams.AddIgnoredActor(this);
+			QueryParams.bTraceComplex = true;
+			QueryParams.bReturnPhysicalMaterial = true;
 
-			TracerEndPoint = TraceEnd + (EyeLocation.RightVector * Point.X) + (EyeLocation.UpVector * Point.Y);
-			
-			if(GetWorld()->LineTraceSingleByChannel(HitResult,EyeLocation,TracerEndPoint,COLLISION_WEAPON,QueryParams))
+			FHitResult HitResult;
+
+
+			EPhysicalSurface SurfaceType = SurfaceType_Default;
+
+			FVector TracerEndPoint;
+			PlayAnimFire();
+			float Radius;
+			for (int i = 0; i<NumPellets;i++)
 			{
-				SurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+				Radius = FMath::Tan(FMath::DegreesToRadians(BulletAngle))* MaxDistanceEnd;
+				FVector2D Point = RandomPointInCircle(Radius);
+
+				TracerEndPoint = TraceEnd + (EyeLocation.RightVector * Point.X) + (EyeLocation.UpVector * Point.Y);
 			
-				PlayImpactEffects(SurfaceType,HitResult.ImpactPoint);
-				TracerEndPoint = HitResult.ImpactPoint;
+				if(GetWorld()->LineTraceSingleByChannel(HitResult,EyeLocation,TracerEndPoint,COLLISION_WEAPON,QueryParams))
+				{
+					AActor* HitActor = HitResult.GetActor();
+			
+					SurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+			
+					float ActualDamage = BaseDamage;
+
+					//Multiply damage depending SurfaceType
+
+					UGameplayStatics::ApplyPointDamage(HitActor, ActualDamage, ShotDirection, HitResult,
+													MyOwner->GetInstigatorController(), this, DamageType);
+			
+					PlayImpactEffects(SurfaceType,HitResult.ImpactPoint);
+					TracerEndPoint = HitResult.ImpactPoint;
+					if(HasAuthority())
+					{
+						HitScanTrace.TraceTo = TracerEndPoint;
+						HitScanTrace.MuzzleLocation = MuzzleLocation;
+						OnRep_HitScanTrace();
+					}
+				}
+			
+				
+			
 			}
-			
-			if(HasAuthority())
-			{
-				HitScanTrace.TraceTo = TracerEndPoint;
-				HitScanTrace.MuzzleLocation = MuzzleLocation;
-				OnRep_HitScanTrace();
-			}
-			
+		
+			PlayWeaponEffects(TracerEndPoint);
+		
+			LastFireTime = GetWorld()->TimeSeconds;
 		}
-		
-		PlayWeaponEffects(TracerEndPoint);
-		
-		LastFireTime = GetWorld()->TimeSeconds;
 	}
+	else
+	{
+		Reload();
+	}
+	
 }
 
