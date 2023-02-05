@@ -2,13 +2,9 @@
 
 
 #include "SWeapon.h"
-
-#include "DrawDebugHelpers.h"
-#include "CombatArena/CombatArena.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "Particles/ParticleSystemComponent.h"
-#include "PhysicalMaterials/PhysicalMaterial.h"
 
 // Sets default values
 ASWeapon::ASWeapon()
@@ -30,6 +26,10 @@ ASWeapon::ASWeapon()
 
 	StartingBulletAngle = 5;
 
+	bulletsMax = 50;
+
+	currentBullets = bulletsMax;
+	
 	SetReplicates(true);
 
 	NetUpdateFrequency = 66.0f;
@@ -53,58 +53,23 @@ void ASWeapon::Fire()
 	{
 		ServerFire();
 	}
-	AActor* MyOwner = GetOwner();
+	MyOwner = GetOwner();
 
 	if(MyOwner)
 	{
-		UE_LOG(LogTemp,Log,TEXT("Fire"));
-		PlayAnimFire();
-		FVector EyeLocation;
-		FRotator EyeRotation;
-		MyOwner->GetActorEyesViewPoint(EyeLocation,EyeRotation);
-		
-		FVector MuzzleLocation = SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
-		
-		FVector ShotDirection = EyeRotation.Vector();
-		FVector TraceEnd = MuzzleLocation + (ShotDirection * MaxDistanceEnd);
-
-		FCollisionQueryParams QueryParams;
-
-		QueryParams.AddIgnoredActor(MyOwner);
-		QueryParams.AddIgnoredActor(this);
-		QueryParams.bTraceComplex = true;
-		QueryParams.bReturnPhysicalMaterial = true;
-
-		//float Spread = FMath::RandRange(BulletSpread.X,BulletSpread.Y);
-		float Radius = FMath::Tan(FMath::DegreesToRadians(BulletAngle))* MaxDistanceEnd;;
-		FVector2D Point = RandomPointInCircle(Radius);
-		
-		FVector TracerEndPoint = TraceEnd + (EyeLocation.RightVector * Point.X) + (EyeLocation.UpVector * Point.Y);
-
-		FHitResult HitResult;
-
-		EPhysicalSurface SurfaceType = SurfaceType_Default;
-
 	
 		
-		if(GetWorld()->LineTraceSingleByChannel(HitResult,EyeLocation,TracerEndPoint,COLLISION_WEAPON,QueryParams))
+		if(currentBullets > 0)
 		{
-			SurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+			UE_LOG(LogTemp,Log,TEXT("Fire"));
 			
-			PlayImpactEffects(SurfaceType,HitResult.ImpactPoint);
-			TracerEndPoint = HitResult.ImpactPoint;
+			shoot();
 		}
-
-		DrawDebugLine(GetWorld(),MuzzleLocation,TracerEndPoint,FColor::Red,false,4,0,2);
-		
-
-		if(HasAuthority())
+		else
 		{
-			HitScanTrace.TraceTo = TracerEndPoint;
-			HitScanTrace.MuzzleLocation = MuzzleLocation;
+			currentBullets = bulletsMax;
 		}
-		PlayWeaponEffects(TracerEndPoint);
-		LastFireTime = GetWorld()->TimeSeconds;
+		UE_LOG(LogTemp,Log,TEXT("Bullets :%d of %d"),currentBullets,bulletsMax);
 	}
 	
 }
@@ -123,6 +88,10 @@ void ASWeapon::OnRep_HitScanTrace()
 {
 	PlayWeaponEffects(HitScanTrace.TraceTo);
 	PlayImpactEffects(HitScanTrace.SurfaceType,HitScanTrace.TraceTo);
+}
+
+void ASWeapon::shoot()
+{
 }
 
 void ASWeapon::StartFire()
@@ -146,7 +115,6 @@ void ASWeapon::PlayImpactEffects(EPhysicalSurface SurfaceType, FVector ImpactPoi
 	UParticleSystem* SelectedImpactEffect = nullptr;
 	SelectedImpactEffect = DefaultImpactEffect;
 	UGameplayStatics::SpawnEmitterAtLocation(GetWorld(),SelectedImpactEffect,ImpactPoint,ShotDirection.Rotation());
-//	a->SetIsReplicated(true);
 }
 
 void ASWeapon::PlayWeaponEffects(FVector TraceEnd)
@@ -201,5 +169,6 @@ void ASWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetime
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	DOREPLIFETIME(ASWeapon,currentBullets);
 	DOREPLIFETIME_CONDITION(ASWeapon,HitScanTrace,COND_SkipOwner);
 }

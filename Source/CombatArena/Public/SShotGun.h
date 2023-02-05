@@ -23,6 +23,7 @@ class COMBATARENA_API ASShotGun : public ASWeapon
 	
 	virtual void Fire() override;
 
+	virtual void shoot() override;
 	
 	UPROPERTY(EditDefaultsOnly,Category="Weapon")
 	int32 NumPellets;

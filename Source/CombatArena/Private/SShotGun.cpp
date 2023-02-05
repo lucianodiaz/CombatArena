@@ -3,9 +3,6 @@
 
 #include "SShotGun.h"
 
-#include <valarray>
-
-#include "DrawDebugHelpers.h"
 #include "CombatArena/CombatArena.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 
@@ -23,64 +20,62 @@ void ASShotGun::BeginPlay()
 
 void ASShotGun::Fire()
 {
-	if(!HasAuthority())
+	Super::Fire();
+}
+
+void ASShotGun::shoot()
+{
+	currentBullets--;
+	
+	FVector EyeLocation;
+	FRotator EyeRotation;
+	MyOwner->GetActorEyesViewPoint(EyeLocation,EyeRotation);
+		
+	FVector MuzzleLocation = SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
+		
+	FVector ShotDirection = EyeRotation.Vector();
+	FVector TraceEnd = MuzzleLocation + (ShotDirection * MaxDistanceEnd);
+		
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(MyOwner);
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.bTraceComplex = true;
+	QueryParams.bReturnPhysicalMaterial = true;
+
+	FHitResult HitResult;
+
+
+	EPhysicalSurface SurfaceType = SurfaceType_Default;
+
+	FVector TracerEndPoint;
+	PlayAnimFire();
+	float Radius;
+	for (int i = 0; i<NumPellets;i++)
 	{
-		ServerFire();
-	}
-	AActor* MyOwner = GetOwner();
-	if(MyOwner)
-	{
-		UE_LOG(LogTemp,Log,TEXT("Fire"));
-		FVector EyeLocation;
-		FRotator EyeRotation;
-		MyOwner->GetActorEyesViewPoint(EyeLocation,EyeRotation);
-		
-		FVector MuzzleLocation = SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
-		
-		FVector ShotDirection = EyeRotation.Vector();
-		FVector TraceEnd = MuzzleLocation + (ShotDirection * MaxDistanceEnd);
-		
-		FCollisionQueryParams QueryParams;
-		QueryParams.AddIgnoredActor(MyOwner);
-		QueryParams.AddIgnoredActor(this);
-		QueryParams.bTraceComplex = true;
-		QueryParams.bReturnPhysicalMaterial = true;
+		Radius = FMath::Tan(FMath::DegreesToRadians(BulletAngle))* MaxDistanceEnd;
+		FVector2D Point = RandomPointInCircle(Radius);
 
-		FHitResult HitResult;
-
-
-		EPhysicalSurface SurfaceType = SurfaceType_Default;
-
-		FVector TracerEndPoint;
-		PlayAnimFire();
-		float Radius;
-		for (int i = 0; i<NumPellets;i++)
+		TracerEndPoint = TraceEnd + (EyeLocation.RightVector * Point.X) + (EyeLocation.UpVector * Point.Y);
+			
+		if(GetWorld()->LineTraceSingleByChannel(HitResult,EyeLocation,TracerEndPoint,COLLISION_WEAPON,QueryParams))
 		{
-			Radius = FMath::Tan(FMath::DegreesToRadians(BulletAngle))* MaxDistanceEnd;
-			FVector2D Point = RandomPointInCircle(Radius);
-
-			TracerEndPoint = TraceEnd + (EyeLocation.RightVector * Point.X) + (EyeLocation.UpVector * Point.Y);
+			SurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
 			
-			if(GetWorld()->LineTraceSingleByChannel(HitResult,EyeLocation,TracerEndPoint,COLLISION_WEAPON,QueryParams))
-			{
-				SurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
-			
-				PlayImpactEffects(SurfaceType,HitResult.ImpactPoint);
-				TracerEndPoint = HitResult.ImpactPoint;
-			}
-			
-			if(HasAuthority())
-			{
-				HitScanTrace.TraceTo = TracerEndPoint;
-				HitScanTrace.MuzzleLocation = MuzzleLocation;
-				OnRep_HitScanTrace();
-			}
-			
+			PlayImpactEffects(SurfaceType,HitResult.ImpactPoint);
+			TracerEndPoint = HitResult.ImpactPoint;
 		}
-		
-		PlayWeaponEffects(TracerEndPoint);
-		
-		LastFireTime = GetWorld()->TimeSeconds;
+			
+		if(HasAuthority())
+		{
+			HitScanTrace.TraceTo = TracerEndPoint;
+			HitScanTrace.MuzzleLocation = MuzzleLocation;
+			OnRep_HitScanTrace();
+		}
+			
 	}
+		
+	PlayWeaponEffects(TracerEndPoint);
+		
+	LastFireTime = GetWorld()->TimeSeconds;
 }
 

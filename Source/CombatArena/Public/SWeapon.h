@@ -24,7 +24,7 @@ public:
 };
 
 
-UCLASS()
+UCLASS(Abstract,Blueprintable)
 class COMBATARENA_API ASWeapon : public AActor
 {
 	GENERATED_BODY()
@@ -82,6 +82,12 @@ protected:
 	
 	UPROPERTY(EditDefaultsOnly,Category="Weapon")
 	float MaxDistanceEnd;
+
+	UPROPERTY(EditDefaultsOnly,Category="Weapon")
+	int bulletsMax;
+
+	UPROPERTY(Replicated)
+	int currentBullets;
 	
 	UPROPERTY(VisibleDefaultsOnly,Category="Weapon")
 	FName MuzzleSocketName;
@@ -94,6 +100,12 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Weapon")
 	USkeletalMeshComponent* SkeletalMeshComponent;
+
+	AActor* MyOwner=nullptr;
+
+private:
+	virtual void shoot();
+	
 public:
 
 	void StartFire();
